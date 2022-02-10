@@ -71,8 +71,71 @@ defmodule CsvApi.Schema do
     end
   end
 
+  @spec get_region_by_name(String.t()) :: Region.t() | nil
+  def get_region_by_name(name) when is_binary(name) do
+    query =
+      from r in Region,
+        where: r.name == ^name,
+        select: r
+
+    Repo.one(query)
+  end
+
+  @doc """
+  Deletes a region as well as all associated countries and orders
+  """
+  @spec delete_region_by_name(String.t()) :: :ok
+  def delete_region_by_name(name) when is_binary(name) do
+    query =
+      from r in Region,
+        where: r.name == ^name
+
+    Repo.delete_all(query)
+    :ok
+  end
+
+  @doc """
+  Deletes all orders for a given region, keeping the region and countries
+  """
+  @spec delete_all_region_orders(region_name :: String.t()) :: :ok
+  def delete_all_region_orders(region_name) when is_binary(region_name) do
+    query =
+      from o in Order,
+        join: c in Country,
+        on: o.country_id == c.id,
+        join: r in Region,
+        on: c.region_id == r.id,
+        where: r.name == ^region_name
+
+    Repo.delete_all(query)
+    :ok
+  end
+
+  @doc """
+  Sets all orders within a given region to the given sales channel type
+
+  Throws an error if the sales channel type is not `"Online"` or `"Offline"`
+  """
+  @spec update_region_sales_channel(region_name :: String.t(), sales_channel :: String.t()) :: :ok
+  def update_region_sales_channel(region_name, sales_channel)
+      when is_binary(region_name) and sales_channel in ["Online", "Offline"] do
+    query =
+      from o in Order,
+        join: c in Country,
+        on: o.country_id == c.id,
+        join: r in Region,
+        on: c.region_id == r.id,
+        where: r.name == ^region_name,
+        update: [set: [sales_channel: ^sales_channel]]
+
+    Repo.update_all(query, [])
+    :ok
+  end
+
   @doc """
   Clears the database and re-inserts everything
+
+  Duplicate order ids replace the existing order
   """
   @spec replace_csv(Enum.t()) :: non_neg_integer()
   def replace_csv(lines) do
@@ -80,79 +143,81 @@ defmodule CsvApi.Schema do
     # Deleting all regions will also delete all orders and countries.
     Repo.delete_all(Region)
 
-    row_maps =
-      lines
-      |> Stream.map(fn line ->
-        String.split(line, ",")
-      end)
-      |> Enum.map(&row_to_map/1)
-
-    region_map = row_to_region_map(row_maps)
-
-    country_map = row_to_country_map(region_map, row_maps)
-
-    order_list = insert_orders(country_map, row_maps)
-
-    length(order_list)
+    add_csv(lines)
   end
 
-  defp row_to_region_map(row_maps) do
-    row_maps
-    |> Stream.map(fn row_map ->
-      row_map.region
-    end)
-    |> Enum.sort()
-    |> Enum.dedup()
-    |> Enum.map(fn region ->
-      region = %Region{name: region} |> Repo.insert!()
-      {region.name, region}
-    end)
-    |> Map.new()
+  @doc """
+  Inserts a CSV file into the database without erasing
+
+  Duplicate order ids replace the existing order
+
+  Uses `Flow` to improve parallelism, gave almost a 2x speedup on my machine
+  """
+  @spec add_csv(Enum.t()) :: non_neg_integer()
+  def add_csv(lines) do
+
+    # For performance, compile the split pattern once, instead of every time String.split is called
+    comma_pattern = :binary.compile_pattern(",")
+
+    lines
+    |> Flow.from_enumerable(max_demand: 100)
+    |> Flow.partition()
+    |> Flow.map(&String.split(&1, comma_pattern))
+    |> Flow.map(&row_to_map/1)
+    |> Flow.map(&row_map_to_order/1)
+    # Call Enum.count to force Flow to run, then return the count
+    |> Enum.count()
   end
 
-  defp row_to_country_map(region_map, row_maps) do
-    row_maps
-    |> Stream.map(fn row_map ->
-      # Since there's the edge case of two countries with the same name,
-      # we need to make sure we have a unique country, region pair.
-      {row_map.country, row_map.region}
-    end)
-    |> Enum.sort()
-    |> Enum.dedup()
-    |> Enum.map(fn {country, region} ->
-      # Get the region's ID.
-      region_id = region_map[region].id
+  defp row_map_to_order(row_map) do
+    country_name = row_map.country
+    region_name = row_map.region
 
-      # Insert the country.
-      country = %Country{name: country, region_id: region_id} |> Repo.insert!()
-      {{region, country.name}, country}
-    end)
-    |> Map.new()
+    region = get_or_insert_region(region_name)
+    country = get_or_insert_country(region, country_name)
+
+    %Order{
+      id: row_map.order_id,
+      type: row_map.item_type,
+      country_id: country.id,
+      sales_channel: row_map.sales_channel,
+      order_date: row_map.order_date,
+      order_priority: row_map.order_priority,
+      ship_date: row_map.ship_date,
+      units_sold: row_map.units_sold,
+      unit_price: row_map.unit_price,
+      unit_cost: row_map.unit_cost,
+      total_revenue: row_map.total_revenue,
+      total_cost: row_map.total_cost
+    }
+    |> Repo.insert!(on_conflict: :replace_all)
   end
 
-  defp insert_orders(country_map, row_maps) do
-    # TODO: Look into using Tasks to parallelize this.
-    row_maps
-    |> Stream.map(fn row_map ->
-      country_id = country_map[{row_map.region, row_map.country}].id
+  @spec get_or_insert_region(region_name :: String.t()) :: Region.t()
+  defp get_or_insert_region(region_name) do
+    # Attempt to insert the region, if it already exists, id will remain nil
+    region = %Region{name: region_name} |> Repo.insert!(on_conflict: :nothing)
 
-      %Order{
-        id: row_map.order_id,
-        type: row_map.item_type,
-        country_id: country_id,
-        sales_channel: row_map.sales_channel,
-        order_date: row_map.order_date,
-        order_priority: row_map.order_priority,
-        ship_date: row_map.ship_date,
-        units_sold: row_map.units_sold,
-        unit_price: row_map.unit_price,
-        unit_cost: row_map.unit_cost,
-        total_revenue: row_map.total_revenue,
-        total_cost: row_map.total_cost
-      }
-      |> Repo.insert!()
-    end)
-    |> Enum.to_list()
+    # If the region already exists, then we need to fetch it
+    if is_nil(region.id) do
+      Repo.one!(from r in Region, where: r.name == ^region_name)
+    else
+      region
+    end
+  end
+
+  @spec get_or_insert_country(region :: Region.t(), country_name :: String.t()) :: Country.t()
+  defp get_or_insert_country(%Region{} = region, country_name) do
+    # Attempt to insert the country, if a country in that region already exists, id will remain nil
+    country =
+      %Country{name: country_name, region_id: region.id} |> Repo.insert!(on_conflict: :nothing)
+
+    # If the country already exists, must re-fetch due to DB limitations
+    if is_nil(country.id) do
+      Repo.one!(from c in Country, where: c.name == ^country_name and c.region_id == ^region.id)
+    else
+      country
+    end
   end
 
   @spec row_to_map([String.t()]) :: map()
@@ -189,8 +254,12 @@ defmodule CsvApi.Schema do
     total_cost = Decimal.new(total_cost)
     total_profit = Decimal.new(total_profit)
 
-    # Convert the sales channel to an existing atom
-    sales_channel = sales_channel |> String.downcase(:ascii) |> String.to_existing_atom()
+    # Convert the sales channel to an atom
+    sales_channel =
+      case String.downcase(sales_channel, :ascii) do
+        "online" -> :online
+        "offline" -> :offline
+      end
 
     %{
       region: region,
