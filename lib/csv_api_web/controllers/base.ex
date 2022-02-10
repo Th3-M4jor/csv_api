@@ -30,7 +30,7 @@ defmodule CsvApiWeb.BaseController do
   end
 
   def get_json(conn, _params) do
-    data = CsvApi.Schema.get_all()
+    data = CsvApi.Schema.get_all_orders()
     render(conn, "orders.json", %{data: data})
   end
 

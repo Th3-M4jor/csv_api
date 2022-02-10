@@ -1,6 +1,6 @@
 defmodule CsvApi.Schema do
   @moduledoc """
-  This module provides a simple interface to the inner table schema
+  This module provides a simple interface to the inner Database schema.
   """
 
   require Logger
@@ -8,21 +8,84 @@ defmodule CsvApi.Schema do
   alias CsvApi.Repo
   alias CsvApi.Schema.{Country, Order, Region}
 
-  def get_all do
-    query = from c in Country, preload: [:orders, :region]
+  @doc """
+  This function returns a list of all countries in the database
+
+  When preload is true, the associated region and orders are also loaded
+  """
+  @spec get_all_countries(boolean()) :: [Country.t()]
+  def get_all_countries(preload \\ false) do
+    query =
+      if preload do
+        from c in Country, preload: [:orders, :region]
+      else
+        Country
+      end
+
     Repo.all(query)
   end
 
+  @doc """
+  Returns all orders, sorted by region then country then order id
+  """
+  @spec get_all_orders() :: [Order.t()]
+  def get_all_orders do
+    query =
+      from o in Order,
+        join: c in Country,
+        on: o.country_id == c.id,
+        join: r in Region,
+        on: c.region_id == r.id,
+        select: {o, c.name, r.name},
+        order_by: [r.name, c.name, o.id]
+
+    Repo.all(query)
+    |> Enum.map(fn {order, country_name, region_name} ->
+      # update the order's virtual fields with the country and region names
+      %{order | country_name: country_name, region_name: region_name}
+    end)
+  end
+
+  @doc """
+  Fetch a single order by id, populates it's country_name and region_name fields.
+  """
+  @spec get_order_by_id(non_neg_integer()) ::
+          {:error, String.t()} | {:ok, Order.t()}
+  def get_order_by_id(id) when is_integer(id) do
+    query =
+      from o in Order,
+        join: c in Country,
+        on: o.country_id == c.id,
+        join: r in Region,
+        on: c.region_id == r.id,
+        where: o.id == ^id,
+        select: {o, c.name, r.name}
+
+    case Repo.one(query) do
+      nil ->
+        {:error, "Order not found"}
+
+      {order, country_name, region_name} ->
+        # update the order's virtual fields with the country and region names
+        {:ok, %{order | country_name: country_name, region_name: region_name}}
+    end
+  end
+
+  @doc """
+  Clears the database and re-inserts everything
+  """
   @spec replace_csv(Enum.t()) :: non_neg_integer()
   def replace_csv(lines) do
-
     # Erase any existing data.
     # Deleting all regions will also delete all orders and countries.
     Repo.delete_all(Region)
 
-    row_maps = lines |> Stream.map(fn line ->
-      String.split(line, ",")
-    end) |> Stream.map(&row_to_map/1)
+    row_maps =
+      lines
+      |> Stream.map(fn line ->
+        String.split(line, ",")
+      end)
+      |> Enum.map(&row_to_map/1)
 
     region_map = row_to_region_map(row_maps)
 
@@ -31,31 +94,48 @@ defmodule CsvApi.Schema do
     order_list = insert_orders(country_map, row_maps)
 
     length(order_list)
-
   end
 
   defp row_to_region_map(row_maps) do
-    row_maps |> Stream.map(fn row_map ->
+    row_maps
+    |> Stream.map(fn row_map ->
       row_map.region
-    end) |> Enum.sort() |> Enum.dedup() |> Enum.map(fn region ->
+    end)
+    |> Enum.sort()
+    |> Enum.dedup()
+    |> Enum.map(fn region ->
       region = %Region{name: region} |> Repo.insert!()
       {region.name, region}
-    end) |> Map.new()
+    end)
+    |> Map.new()
   end
 
   defp row_to_country_map(region_map, row_maps) do
-    row_maps |> Stream.map(fn row_map ->
+    row_maps
+    |> Stream.map(fn row_map ->
+      # Since there's the edge case of two countries with the same name,
+      # we need to make sure we have a unique country, region pair.
       {row_map.country, row_map.region}
-    end) |> Enum.sort() |> Enum.dedup() |> Enum.map(fn {country, region} ->
+    end)
+    |> Enum.sort()
+    |> Enum.dedup()
+    |> Enum.map(fn {country, region} ->
+      # Get the region's ID.
       region_id = region_map[region].id
+
+      # Insert the country.
       country = %Country{name: country, region_id: region_id} |> Repo.insert!()
       {{region, country.name}, country}
-    end) |> Map.new()
+    end)
+    |> Map.new()
   end
 
   defp insert_orders(country_map, row_maps) do
-    row_maps |> Stream.map(fn row_map ->
+    # TODO: Look into using Tasks to parallelize this.
+    row_maps
+    |> Stream.map(fn row_map ->
       country_id = country_map[{row_map.region, row_map.country}].id
+
       %Order{
         id: row_map.order_id,
         type: row_map.item_type,
@@ -68,16 +148,33 @@ defmodule CsvApi.Schema do
         unit_price: row_map.unit_price,
         unit_cost: row_map.unit_cost,
         total_revenue: row_map.total_revenue,
-        total_cost: row_map.total_cost,
-      } |> Repo.insert!()
-    end) |> Enum.to_list()
+        total_cost: row_map.total_cost
+      }
+      |> Repo.insert!()
+    end)
+    |> Enum.to_list()
   end
 
   @spec row_to_map([String.t()]) :: map()
   defp row_to_map(row) do
     Logger.debug("Parsing row: #{Kernel.inspect(row)}")
     # A proper row should have 14 columns. Will raise a match error if not
-    [region, country, item_type, sales_channel, order_priority, order_date, order_id, ship_date, units_sold, unit_price, unit_cost, total_revenue, total_cost, total_profit] = row
+    [
+      region,
+      country,
+      item_type,
+      sales_channel,
+      order_priority,
+      order_date,
+      order_id,
+      ship_date,
+      units_sold,
+      unit_price,
+      unit_cost,
+      total_revenue,
+      total_cost,
+      total_profit
+    ] = row
 
     # Convert the date strings to Date objects
     order_date = parse_date_str(order_date)
@@ -122,5 +219,4 @@ defmodule CsvApi.Schema do
     year = String.to_integer(year)
     Date.new!(year, month, day)
   end
-
 end
