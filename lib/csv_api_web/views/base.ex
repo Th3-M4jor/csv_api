@@ -28,6 +28,7 @@ defmodule CsvApiWeb.BaseView do
       unit_cost: order.unit_cost,
       total_revenue: order.total_revenue,
       total_cost: order.total_cost,
+      total_profit: order.total_profit,
       country: order.country_name,
       region: order.region_name
     }

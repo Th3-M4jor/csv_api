@@ -22,6 +22,7 @@ defmodule CsvApi.Repo.Migrations.CreateTables do
       add :unit_cost, :decimal, null: false
       add :total_revenue, :decimal, null: false
       add :total_cost, :decimal, null: false
+      add :total_profit, :decimal, null: false
       add :country_id, references("country", on_update: :update_all, on_delete: :delete_all)
     end
   end

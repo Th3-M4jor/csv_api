@@ -40,6 +40,7 @@ defmodule CsvApi.Schema.Order do
     field :unit_cost, :decimal
     field :total_revenue, :decimal
     field :total_cost, :decimal
+    field :total_profit, :decimal
     field :country_name, :string, virtual: true
     field :region_name, :string, virtual: true
     belongs_to :country, Country

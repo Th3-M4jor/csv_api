@@ -188,7 +188,8 @@ defmodule CsvApi.Schema do
       unit_price: row_map.unit_price,
       unit_cost: row_map.unit_cost,
       total_revenue: row_map.total_revenue,
-      total_cost: row_map.total_cost
+      total_cost: row_map.total_cost,
+      total_profit: row_map.total_profit
     }
     |> Repo.insert!(on_conflict: :replace_all)
   end
