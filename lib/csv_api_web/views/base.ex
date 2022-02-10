@@ -5,9 +5,16 @@ defmodule CsvApiWeb.BaseView do
     data
   end
 
+  def render("order.json", %{data: order}) do
+    order_to_map(order)
+  end
+
   def render("orders.json", %{data: orders}) do
-    for order <- orders do
-      sales_channel = Atom.to_string(order.sales_channel) |> String.capitalize(:ascii)
+    Enum.map(orders, &order_to_map/1)
+  end
+
+  defp order_to_map(order) do
+    sales_channel = Atom.to_string(order.sales_channel) |> String.capitalize(:ascii)
       %{
         order_id: order.id,
         type: order.type,
@@ -23,6 +30,5 @@ defmodule CsvApiWeb.BaseView do
         country: order.country_name,
         region: order.region_name
       }
-    end
   end
 end
