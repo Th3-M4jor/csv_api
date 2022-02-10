@@ -10,9 +10,9 @@ defmodule CsvApiWeb.Router do
 
     put "/csv", BaseController, :put_csv
 
-    get "/json", BaseController, :get_json
+    get "/order/:id", BaseController, :get_order
 
-    get "/", BaseController, :index
+    get "/orders", BaseController, :get_orders
 
   end
 end
