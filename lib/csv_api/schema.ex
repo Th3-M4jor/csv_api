@@ -8,6 +8,27 @@ defmodule CsvApi.Schema do
   alias CsvApi.Repo
   alias CsvApi.Schema.{Country, Order, Region}
 
+
+  @typedoc """
+  Defines the map returned by `row_to_map/1`.
+  """
+  @type rowmap :: %{
+    region: String.t(),
+    country: String.t(),
+    item_type: String.t(),
+    sales_channel: :online | :offline,
+    order_priority: String.t(),
+    order_date: Date.t(),
+    order_id: integer(),
+    ship_date: Date.t(),
+    units_sold: integer(),
+    unit_price: Decimal.t(),
+    unit_cost: Decimal.t(),
+    total_revenue: Decimal.t(),
+    total_cost: Decimal.t(),
+    total_profit: Decimal.t(),
+  }
+
   @doc """
   This function returns a list of all countries in the database
 
@@ -71,6 +92,9 @@ defmodule CsvApi.Schema do
     end
   end
 
+  @doc """
+  Fetch a region by name
+  """
   @spec get_region_by_name(String.t()) :: Region.t() | nil
   def get_region_by_name(name) when is_binary(name) do
     query =
@@ -114,9 +138,9 @@ defmodule CsvApi.Schema do
   @doc """
   Sets all orders within a given region to the given sales channel type
 
-  Throws an error if the sales channel type is not `"Online"` or `"Offline"`
+  Raises an error if the sales channel type is not `"Online"` or `"Offline"`
   """
-  @spec update_region_sales_channel(region_name :: String.t(), sales_channel :: String.t()) :: :ok
+  @spec update_region_sales_channel(region_name :: String.t(), sales_channel :: String.t()) :: :ok | no_return()
   def update_region_sales_channel(region_name, sales_channel)
       when is_binary(region_name) and sales_channel in ["Online", "Offline"] do
     query =
@@ -136,6 +160,8 @@ defmodule CsvApi.Schema do
   Clears the database and re-inserts everything
 
   Duplicate order ids replace the existing order
+
+  See `add_csv/1`
   """
   @spec replace_csv(Enum.t()) :: non_neg_integer()
   def replace_csv(lines) do
@@ -152,6 +178,8 @@ defmodule CsvApi.Schema do
   Duplicate order ids replace the existing order
 
   Uses `Flow` to improve parallelism, gave almost a 2x speedup on my machine
+
+  On a production system, would use a more robust CSV parser with more error handling
   """
   @spec add_csv(Enum.t()) :: non_neg_integer()
   def add_csv(lines) do
@@ -168,6 +196,7 @@ defmodule CsvApi.Schema do
     |> Enum.count()
   end
 
+  @spec row_map_to_order(rowmap()) :: Order.t()
   defp row_map_to_order(row_map) do
     country_name = row_map.country
     region_name = row_map.region
@@ -193,6 +222,7 @@ defmodule CsvApi.Schema do
     |> Repo.insert!(on_conflict: :replace_all)
   end
 
+  # In a production system, a table of all regions would be prepopulated and fixed
   @spec get_or_insert_region(region_name :: String.t()) :: Region.t()
   defp get_or_insert_region(region_name) do
     # Attempt to insert the region, if it already exists, id will remain nil
@@ -206,6 +236,7 @@ defmodule CsvApi.Schema do
     end
   end
 
+  # In a production system, a table of all countries would be prepoulated and fixed
   @spec get_or_insert_country(region :: Region.t(), country_name :: String.t()) :: Country.t()
   defp get_or_insert_country(%Region{} = region, country_name) do
     # Attempt to insert the country, if a country in that region already exists, id will remain nil
@@ -220,7 +251,7 @@ defmodule CsvApi.Schema do
     end
   end
 
-  @spec row_to_map([String.t()]) :: map()
+  @spec row_to_map([String.t()]) :: rowmap()
   defp row_to_map(row) do
     Logger.debug("Parsing row: #{Kernel.inspect(row)}")
     # A proper row should have 14 columns. Will raise a match error if not
