@@ -1,4 +1,7 @@
 defmodule CsvApi.Schema.Country do
+  @moduledoc """
+  Defines the schema for the Country table.
+  """
   use Ecto.Schema
   alias CsvApi.Schema.{Order, Region}
 
