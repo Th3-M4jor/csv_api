@@ -49,9 +49,19 @@ config :csv_api, CsvApiWeb.Endpoint,
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
 
+config :logger,
+  # set debug level to info
+  level: :info,
+
+  # purge all debug statements at compile time
+  # apparently in a docker container debug logging is so slow that larger requests time out
+  compile_time_purge_matching: [
+    [level_lower_than: :info]
+  ]
+
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
-config :phoenix, :stacktrace_depth, 20
+config :phoenix, :stacktrace_depth, 5
 
 # Initialize plugs at runtime for faster development compilation
 config :phoenix, :plug_init_mode, :runtime

@@ -2,4 +2,11 @@
 _build/*
 .elixir_ls/*
 deps/*
+
+#test files
+test/*
+
+# sqlite database files
 *.db
+*.db-shm
+*.db-wal
