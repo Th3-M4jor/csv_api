@@ -6,6 +6,7 @@ COPY . .
 
 RUN apk add --update-cache build-base && \
     mix local.hex --force && \
+    mix local.rebar --force && \
     mix deps.get && \
     mix compile && \
     rm -rf /var/cache/apk/* && \
