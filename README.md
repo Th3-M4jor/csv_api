@@ -1,5 +1,23 @@
 # CsvApi
-Coding Challenge for ICO Parnters
+Implementation of a simple API for uploading a CSV file and manipulating it.
+
+Expects a CSV file with the following columns in the following order:
+- `Region`: The region name
+- `Country`: The country name
+- `Item Type`: The item type
+- `Sales Channel`: The sales channel (`Online`, `Offline`)
+- `Order Priority`: The order priority
+- `Order Date`: The order date (format: `MM/DD/YYYY`)
+- `Order ID`: The order ID
+- `Ship Date`: The ship date (format: `MM/DD/YYYY`)
+- `Units Sold`: The units sold
+- `Unit Price`: The unit price
+- `Unit Cost`: The unit cost
+- `Total Revenue`: The total revenue
+- `Total Cost`: The total cost
+- `Total Profit`: The total profit
+
+When uploading a CSV file a header row is assumed to be present, unless the optional query parameter `header` is set to `false`.
 
 To build the Docker container, run `docker build -t csv-api .`
 
