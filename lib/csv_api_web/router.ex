@@ -14,6 +14,8 @@ defmodule CsvApiWeb.Router do
 
     delete "/region/data", BaseController, :delete_region
 
+    patch "/region/channel", BaseController, :update_region_channel
+
     get "/order/:id", BaseController, :get_order
 
     get "/orders", BaseController, :get_orders

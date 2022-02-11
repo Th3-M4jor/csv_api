@@ -42,6 +42,9 @@ defmodule CsvApiWeb.BaseController do
     resp(conn, 400, "Missing file")
   end
 
+  @doc """
+  Function for inserting a CSV without replacing the existing data, on conflicting order IDs, will replace.
+  """
   def add_csv(conn, %{"file" => %Plug.Upload{path: path}} = params) do
     data = File.read!(path)
 
@@ -63,18 +66,28 @@ defmodule CsvApiWeb.BaseController do
       resp(conn, 500, "Internal Server Error")
   end
 
+  def add_csv(conn, _params) do
+    resp(conn, 400, "Missing file")
+  end
+
   @doc """
   Get a single order by ID.
   """
   def get_order(conn, %{"id" => id}) do
-    id = String.to_integer(id)
 
-    case CsvApi.Schema.get_order_by_id(id) do
-      {:ok, order} ->
-        render(conn, "order.json", %{data: order})
+    case Integer.parse(id) do
+      :error ->
+        resp(conn, 400, "ID must be an integer")
+      {id, ""} ->
+        case CsvApi.Schema.get_order_by_id(id) do
+          {:ok, order} ->
+            render(conn, "order.json", %{data: order})
 
-      {:error, reason} ->
-        resp(conn, 404, reason)
+          {:error, reason} ->
+            resp(conn, 404, reason)
+        end
+      _ ->
+        resp(conn, 400, "ID must be an integer")
     end
   end
 
@@ -113,11 +126,11 @@ defmodule CsvApiWeb.BaseController do
       when is_binary(name) and is_binary(channel) do
     channel = String.capitalize(channel, :ascii)
 
-    if channel not in ["Online", "Offline"] do
-      resp(conn, 400, "Invalid channel type, expects \"Online\" or \"Offline\"")
-    else
+    if channel in ["Online", "Offline"] do
       CsvApi.Schema.update_region_sales_channel(name, channel)
       resp(conn, 204, "")
+    else
+      resp(conn, 400, "Invalid channel type, expects \"Online\" or \"Offline\"")
     end
   end
 
