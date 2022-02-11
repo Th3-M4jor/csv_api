@@ -74,10 +74,10 @@ defmodule CsvApiWeb.BaseController do
   Get a single order by ID.
   """
   def get_order(conn, %{"id" => id}) do
-
     case Integer.parse(id) do
       :error ->
         resp(conn, 400, "ID must be an integer")
+
       {id, ""} ->
         case CsvApi.Schema.get_order_by_id(id) do
           {:ok, order} ->
@@ -86,6 +86,7 @@ defmodule CsvApiWeb.BaseController do
           {:error, reason} ->
             resp(conn, 404, reason)
         end
+
       _ ->
         resp(conn, 400, "ID must be an integer")
     end

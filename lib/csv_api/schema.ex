@@ -155,7 +155,6 @@ defmodule CsvApi.Schema do
   """
   @spec add_csv(Enum.t()) :: non_neg_integer()
   def add_csv(lines) do
-
     # For performance, compile the split pattern once, instead of every time String.split is called
     comma_pattern = :binary.compile_pattern(",")
 
